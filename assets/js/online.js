@@ -1,126 +1,188 @@
 /* =========================================================
    online.js — 파이어베이스 연결층
 
-   이 파일만 바깥(파이어베이스)과 이야기합니다.
-   화면을 그리는 일은 main.js 가 맡고, 둘은 window.ONLINE 으로만
-   주고받습니다. 연결 정보가 비어 있으면 조용히 꺼진 채로 둡니다.
+   ES 모듈을 쓰지 않습니다. 모듈 방식은 파일을 직접 열었을 때(file://)
+   브라우저가 막아 버리기 때문에, 어디서 열든 똑같이 붙도록
+   compat SDK 를 필요할 때만 내려받아 씁니다.
 
    저장 구조 (Realtime Database)
      /photos/hall/{no}      { data, by, at }     사진 1장 (base64)
      /photos/memorial/{no}  { data, by, at }
      /qna/{pushId}          { name, body, at, answer, answeredAt }
    ========================================================= */
-import { initializeApp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  getDatabase, ref, onValue, set, remove, push, update, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+(function () {
+  'use strict';
 
-var cfg = window.FIREBASE_CONFIG || {};
-var ready = !!(cfg.apiKey && cfg.databaseURL);
-
-/* 연결 정보가 없으면 '꺼진 상태'로 선언하고 끝냅니다.
-   화면 쪽은 ONLINE.enabled 로 판단해 안내 문구만 바꿉니다. */
-if (!ready) {
-  window.ONLINE = {
-    enabled: false,
-    reason: "파이어베이스 연결 정보가 비어 있습니다. data/firebase-config.js 를 채워 주세요.",
-    isAdmin: function () { return false; },
-    on: function () {}
+  var SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
+  var cfg = window.FIREBASE_CONFIG || {};
+  /* 판정이 끝났음을 알립니다.
+     main.js 보다 먼저 끝날 수도 있어서, 신호(이벤트)와 표시(플래그)를 함께 둡니다. */
+  var done = function () {
+    window.ONLINE_SETTLED = true;
+    document.dispatchEvent(new CustomEvent('online-ready'));
   };
-  document.dispatchEvent(new CustomEvent('online-ready'));
-} else {
-  const app  = initializeApp(cfg);
-  const auth = getAuth(app);
-  const db   = getDatabase(app);
 
-  /* 아주 작은 구독 장치 — 값이 바뀌면 등록된 함수들을 부릅니다 */
-  const listeners = {};
-  const emit = function (name, payload) {
-    (listeners[name] || []).forEach(function (fn) {
-      try { fn(payload); } catch (e) { console.error(e); }
+  /* 연결 정보가 없으면 바로 알립니다 (main.js 가 연습모드로 대신합니다) */
+  if (!cfg.apiKey || !cfg.databaseURL) { done(); return; }
+
+  /* 스크립트를 하나씩 순서대로 읽어 들입니다 */
+  var loadScript = function (src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error('내려받기 실패: ' + src)); };
+      document.head.appendChild(s);
     });
   };
 
-  const state = { user: null, photos: { hall: {}, memorial: {} }, qna: [] };
-
-  /* ── 로그인 상태 ──────────────────────────── */
-  onAuthStateChanged(auth, function (user) {
-    state.user = user;
-    emit('auth', user);
-  });
-
-  /* ── 사진 ─────────────────────────────────── */
-  ['hall', 'memorial'].forEach(function (kind) {
-    onValue(ref(db, 'photos/' + kind), function (snap) {
-      state.photos[kind] = snap.val() || {};
-      emit('photos', state.photos);
+  loadScript(SDK + 'firebase-app-compat.js')
+    .then(function () { return loadScript(SDK + 'firebase-auth-compat.js'); })
+    .then(function () { return loadScript(SDK + 'firebase-database-compat.js'); })
+    .then(function () { build(); })
+    .catch(function (e) {
+      console.warn('[online] 파이어베이스를 불러오지 못했습니다:', e.message);
+      done();                       // 연습모드로 넘어갑니다
     });
-  });
 
-  /* ── 상담 글 ──────────────────────────────── */
-  onValue(ref(db, 'qna'), function (snap) {
-    const raw = snap.val() || {};
-    state.qna = Object.keys(raw)
-      .map(function (id) { return Object.assign({ id: id }, raw[id]); })
-      .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
-    emit('qna', state.qna);
-  });
+  function build() {
+    var app  = firebase.initializeApp(cfg);
+    var auth = firebase.auth();
+    var db   = firebase.database();
 
-  window.ONLINE = {
-    enabled: true,
-
-    on: function (name, fn) {
-      (listeners[name] = listeners[name] || []).push(fn);
-      // 이미 들어와 있는 값이 있으면 바로 한 번 전달합니다
-      if (name === 'photos') fn(state.photos);
-      if (name === 'qna' && state.qna.length) fn(state.qna);
-      if (name === 'auth') fn(state.user);
-    },
-
-    isAdmin: function () { return !!state.user; },
-    adminEmail: function () { return state.user ? state.user.email : null; },
-
-    login: function (email, pw) { return signInWithEmailAndPassword(auth, email, pw); },
-    logout: function () { return signOut(auth); },
-
-    photos: function () { return state.photos; },
-    qna: function () { return state.qna; },
-
-    /* 사진 올리기 / 지우기 — 담당자만 (규칙에서도 막습니다) */
-    savePhoto: function (kind, no, dataUrl) {
-      return set(ref(db, 'photos/' + kind + '/' + no), {
-        data: dataUrl,
-        by: state.user ? state.user.uid : null,
-        at: serverTimestamp()
+    var subs = {};
+    var emit = function (name, v) {
+      (subs[name] || []).forEach(function (f) {
+        try { f(v); } catch (err) { console.error(err); }
       });
-    },
-    deletePhoto: function (kind, no) {
-      return remove(ref(db, 'photos/' + kind + '/' + no));
-    },
+    };
 
-    /* 질문 남기기 — 누구나 */
-    ask: function (name, body) {
-      return push(ref(db, 'qna'), {
-        name: String(name || '').slice(0, 20),
-        body: String(body || '').slice(0, 1000),
-        at: serverTimestamp(),
-        answer: null
+    var state = { user: null, photos: { hall: {}, memorial: {} }, qna: [] };
+
+    auth.onAuthStateChanged(function (user) {
+      state.user = user;
+      emit('auth', user);
+      if (user) migrateLocal();        // 담당자로 들어오면 연습모드 자료를 올려 줍니다
+    });
+
+    ['hall', 'memorial'].forEach(function (kind) {
+      db.ref('photos/' + kind).on('value', function (snap) {
+        state.photos[kind] = snap.val() || {};
+        emit('photos', state.photos);
       });
-    },
+    });
 
-    /* 답변 달기 / 글 지우기 — 담당자만 */
-    answer: function (id, text) {
-      return update(ref(db, 'qna/' + id), {
-        answer: String(text || '').slice(0, 2000),
-        answeredAt: serverTimestamp()
+    db.ref('qna').on('value', function (snap) {
+      var raw = snap.val() || {};
+      state.qna = Object.keys(raw)
+        .map(function (id) {
+          var o = raw[id]; o.id = id; return o;
+        })
+        .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+      emit('qna', state.qna);
+    });
+
+    var stamp = firebase.database.ServerValue.TIMESTAMP;
+
+    var API = {
+      enabled: true,
+      mode: 'server',
+
+      on: function (name, fn) {
+        (subs[name] = subs[name] || []).push(fn);
+        if (name === 'photos') fn(state.photos);
+        if (name === 'qna' && state.qna.length) fn(state.qna);
+        if (name === 'auth') fn(state.user);
+      },
+
+      isAdmin: function () { return !!state.user; },
+      adminEmail: function () { return state.user ? state.user.email : null; },
+
+      login: function (email, pw) { return auth.signInWithEmailAndPassword(email, pw); },
+      logout: function () { return auth.signOut(); },
+
+      photos: function () { return state.photos; },
+      qna: function () { return state.qna; },
+
+      savePhoto: function (kind, no, dataUrl) {
+        return db.ref('photos/' + kind + '/' + no).set({
+          data: dataUrl,
+          by: state.user ? state.user.uid : null,
+          at: stamp
+        });
+      },
+      deletePhoto: function (kind, no) {
+        return db.ref('photos/' + kind + '/' + no).remove();
+      },
+
+      ask: function (name, body) {
+        return db.ref('qna').push({
+          name: String(name || '').slice(0, 20),
+          body: String(body || '').slice(0, 1000),
+          at: stamp,
+          answer: null
+        });
+      },
+      answer: function (id, text) {
+        return db.ref('qna/' + id).update({
+          answer: String(text || '').slice(0, 2000),
+          answeredAt: stamp
+        });
+      },
+      removeQna: function (id) { return db.ref('qna/' + id).remove(); }
+    };
+
+    /* ── 연습모드에 쌓인 자료를 서버로 옮깁니다 ──────────
+       한 번 옮기면 브라우저 쪽 자료는 지웁니다.
+       사진은 담당자 권한이 있어야 하므로 로그인 시점에 실행합니다. */
+    function migrateLocal() {
+      var jobs = [];
+      var moved = { photos: 0, qna: 0 };
+
+      var photos = read('local-photos');
+      if (photos) {
+        ['hall', 'memorial'].forEach(function (kind) {
+          Object.keys(photos[kind] || {}).forEach(function (no) {
+            var p = photos[kind][no];
+            if (p && p.data) { jobs.push(API.savePhoto(kind, no, p.data)); moved.photos++; }
+          });
+        });
+      }
+
+      var qna = read('local-qna');
+      if (qna && qna.length) {
+        qna.forEach(function (q) {
+          jobs.push(db.ref('qna').push({
+            name: q.name || '익명',
+            body: q.body || '',
+            at: q.at || Date.now(),
+            answer: q.answer || null,
+            answeredAt: q.answeredAt || null
+          }));
+          moved.qna++;
+        });
+      }
+
+      if (!jobs.length) return;
+
+      Promise.all(jobs).then(function () {
+        try {
+          localStorage.removeItem('local-photos');
+          localStorage.removeItem('local-qna');
+        } catch (e) { /* 무시 */ }
+        console.info('[online] 연습모드 자료를 옮겼습니다 — 사진 ' +
+                     moved.photos + '장, 글 ' + moved.qna + '건');
+        document.dispatchEvent(new CustomEvent('online-migrated', { detail: moved }));
+      }).catch(function (e) {
+        console.warn('[online] 옮기지 못했습니다:', e.message);
       });
-    },
-    removeQna: function (id) { return remove(ref(db, 'qna/' + id)); }
-  };
+    }
 
-  document.dispatchEvent(new CustomEvent('online-ready'));
-}
+    function read(key) {
+      try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+    }
+
+    window.ONLINE = API;
+    done();
+  }
+})();
