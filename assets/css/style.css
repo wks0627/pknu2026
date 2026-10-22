@@ -679,6 +679,108 @@ a{ color:inherit }
   letter-spacing:.08em; color:var(--accent); border-bottom:1px solid currentColor;
 }
 
+/* ── 사진 올리기 (명패 상세 안) ──────────── */
+.pbox{
+  margin-top:2rem; padding:1.3rem 1.4rem;
+  border:1px solid var(--hair); background:var(--tint);
+}
+.pbox--off{
+  margin-top:2rem; padding:1.1rem 1.3rem; border:1px dashed var(--hair);
+  font-size:.84rem; color:var(--text-dim); line-height:1.8;
+}
+.pbox__hint{ margin-top:1.6rem; font-size:.82rem; color:var(--text-dim) }
+.pbox__title{
+  margin:0 0 .9rem; font-size:.76rem; font-weight:700;
+  letter-spacing:.14em; color:var(--gold-deep);
+}
+.pbox__drop{
+  display:block; padding:1.4rem; cursor:pointer; text-align:center;
+  border:1px dashed var(--gold-deep); background:#fff;
+  font-size:.9rem; font-weight:700; color:var(--text);
+  transition:background .3s, border-color .3s;
+}
+.pbox__drop:hover{ background:#fffdf7; border-color:var(--accent) }
+.pbox__file{ display:none }
+.pbox__del{
+  margin-top:.7rem; width:100%; padding:.6rem; cursor:pointer;
+  background:none; border:1px solid var(--hair);
+  font-family:inherit; font-size:.84rem; color:var(--text-dim);
+}
+.pbox__del:hover{ border-color:var(--accent); color:var(--accent) }
+.pbox__state{ margin:.9rem 0 0; font-size:.82rem; line-height:1.7; color:var(--text-dim) }
+.pbox__state.is-ok{ color:#1d6b3a; font-weight:700 }
+.pbox__state.is-bad{ color:var(--accent); font-weight:700 }
+
+/* 로그인 양식 */
+.loginform{ display:grid; gap:.5rem; margin-top:1.5rem }
+.loginform label{ font-size:.82rem; font-weight:700; color:var(--text-dim) }
+.loginform input{
+  padding:.75rem .9rem; border:1px solid var(--hair);
+  background:#fff; font-family:inherit; font-size:1rem; color:var(--text);
+}
+.loginform input:focus{ outline:none; border-color:var(--gold-deep) }
+.loginform .btn{ margin-top:.8rem }
+
+.footer__admin{
+  background:none; border:0; padding:0; cursor:pointer;
+  font-family:inherit; font-size:.8rem; color:var(--on-dim);
+  border-bottom:1px solid var(--hair-dark);
+}
+.footer__admin:hover{ color:var(--gold-lit) }
+body.is-admin .footer__admin{ color:var(--gold-lit); font-weight:700 }
+
+/* ── 온라인 상담창구 ─────────────────────── */
+.ask{ display:grid; gap:1.4rem; max-width:720px }
+.ask__row{ display:grid; gap:.5rem; position:relative }
+.ask__row label{ font-size:.86rem; font-weight:700 }
+.ask__row input, .ask__row textarea{
+  padding:.85rem 1rem; border:1px solid var(--hair); background:#fff;
+  font-family:inherit; font-size:1rem; line-height:1.8; color:var(--text); resize:vertical;
+}
+.ask__row input:focus, .ask__row textarea:focus{ outline:none; border-color:var(--gold-deep) }
+.ask__count{ justify-self:end; font-size:.76rem; color:var(--text-dim) }
+.ask__warn{
+  margin:0; padding:1rem 1.2rem; background:#fdf3f3;
+  border-left:2px solid var(--accent); font-size:.86rem; line-height:1.85; color:var(--text-dim);
+}
+.ask__warn strong{ color:var(--accent); font-weight:700 }
+.ask__send{ display:flex; align-items:center; gap:1.2rem; flex-wrap:wrap }
+.ask__msg{ font-size:.86rem; color:var(--text-dim) }
+.ask__msg.is-ok{ color:#1d6b3a; font-weight:700 }
+.ask__msg.is-bad{ color:var(--accent); font-weight:700 }
+
+.h2__count{ font-size:.7em; font-weight:600; color:var(--text-dim) }
+
+.qna{ display:grid; gap:1.2rem }
+.qcard{ padding:1.8rem; background:#fff; border:1px solid var(--hair) }
+.qcard__q, .qcard__a{ display:grid; grid-template-columns:34px 1fr; gap:1.1rem }
+.qcard__a{
+  margin-top:1.4rem; padding-top:1.4rem; border-top:1px solid var(--hair);
+}
+.qcard__mark{
+  display:grid; place-items:center; width:34px; height:34px;
+  background:var(--tint); font-size:.9rem; font-weight:800; color:var(--text-dim);
+}
+.qcard__mark--a{ background:var(--accent); color:#fff }
+.qcard__meta{
+  margin:0 0 .4rem; font-size:.8rem; font-weight:700; color:var(--text-dim);
+  display:flex; gap:.7rem; align-items:baseline; flex-wrap:wrap;
+}
+.qcard__meta time{ font-weight:500; opacity:.75 }
+.qcard__body{ margin:0; font-size:.97rem; line-height:1.9; white-space:pre-wrap; word-break:break-word }
+.qcard__wait{
+  margin:1.2rem 0 0; padding-top:1.2rem; border-top:1px dashed var(--hair);
+  font-size:.86rem; color:var(--text-dim);
+}
+.qcard__admin{ margin-top:1.3rem; padding-top:1.3rem; border-top:1px solid var(--hair); display:grid; gap:.7rem }
+.qcard__input{
+  padding:.8rem 1rem; border:1px solid var(--hair); background:var(--tint);
+  font-family:inherit; font-size:.95rem; line-height:1.8; resize:vertical;
+}
+.qcard__input:focus{ outline:none; border-color:var(--gold-deep); background:#fff }
+.qcard__btns{ display:flex; align-items:center; gap:1.2rem }
+.qcard__save{ padding:.6rem 1.4rem; font-size:.85rem }
+
 /* ── 표 · 차트 · 목록 ────────────────────── */
 .split{ display:grid; gap:clamp(2rem,4vw,3.5rem); grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); align-items:start }
 .chart svg{ width:100%; height:auto; display:block; overflow:visible }
@@ -856,6 +958,9 @@ a{ color:inherit }
   .banner__img{ width:100% }
   .cover__img{ width:100% }
   .wall__grid{ grid-template-columns:repeat(auto-fill,minmax(108px,1fr)); gap:9px }
+  .qcard__q, .qcard__a{ grid-template-columns:28px 1fr; gap:.8rem }
+  .qcard__mark{ width:28px; height:28px; font-size:.8rem }
+  .ask__send{ gap:.8rem }
   .mum{ width:300px; right:-18%; opacity:.5 }
   .ncard a{ grid-template-columns:1fr; gap:1.1rem }
   .ncard__date{ justify-self:start; justify-items:start; padding:.6rem 1rem;

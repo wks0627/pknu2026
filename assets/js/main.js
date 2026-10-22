@@ -51,6 +51,23 @@
     });
   };
 
+  /* 바이트 수를 사람이 읽는 단위로 */
+  var kb = function (n) {
+    return n < 1024 ? n + 'B' : (n / 1024).toFixed(1) + 'KB';
+  };
+
+  /* base64 data URL 의 실제 저장 용량(문자 수) */
+  var dataUrlBytes = function (url) { return (url || '').length; };
+
+  /* 시각 표시 */
+  var when = function (ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  };
+
   /* 성함 마스킹 — 홍길동 → 홍○○ */
   var maskName = function (name) {
     var s = String(name || '').trim();
@@ -126,6 +143,82 @@
     });
   };
 
+  /* ── 사진 압축 ───────────────────────────────
+     Realtime Database 는 파일 저장소가 아니라 JSON 저장소입니다.
+     사진은 base64 문자열로 들어가고, base64 는 원본보다 약 33% 커집니다.
+     그래서 '목표 용량 아래로 떨어질 때까지' 품질과 크기를 번갈아 낮춥니다.
+
+     1) 긴 변을 maxPx 로 줄인다
+     2) JPEG 품질을 startQuality 부터 조금씩 낮춘다
+     3) 그래도 크면 가로세로를 0.85배씩 줄이고 다시 시도
+     4) minPx / minQuality 에 닿으면 거기서 멈춘다
+
+     반환: { dataUrl, bytes, px, quality, tries }
+     ──────────────────────────────────────────── */
+  var LIMIT = function () {
+    return window.PHOTO_LIMIT || {
+      maxPx: 360, maxBytes: 26000, minQuality: 0.4, minPx: 180, startQuality: 0.72
+    };
+  };
+
+  /* 파일 → 캔버스에 그릴 수 있는 그림. 휴대폰 사진의 회전 정보도 반영합니다 */
+  var loadPicture = function (file) {
+    if (window.createImageBitmap) {
+      return createImageBitmap(file, { imageOrientation: 'from-image' })
+        .catch(function () { return loadViaImg(file); });
+    }
+    return loadViaImg(file);
+  };
+  var loadViaImg = function (file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('이미지를 읽지 못했습니다.')); };
+      img.src = url;
+    });
+  };
+
+  var drawTo = function (pic, longest) {
+    var w = pic.width, h = pic.height;
+    var scale = Math.min(1, longest / Math.max(w, h));
+    var cw = Math.max(1, Math.round(w * scale));
+    var ch = Math.max(1, Math.round(h * scale));
+    var cv = document.createElement('canvas');
+    cv.width = cw; cv.height = ch;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ffffff';          // 투명 PNG 가 검게 나오지 않도록
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(pic, 0, 0, cw, ch);
+    return cv;
+  };
+
+  var compressImage = function (file) {
+    var L = LIMIT();
+    return loadPicture(file).then(function (pic) {
+      var longest = Math.min(L.maxPx, Math.max(pic.width, pic.height));
+      var tries = 0;
+      var best = null;
+
+      while (longest >= L.minPx) {
+        var cv = drawTo(pic, longest);
+        var q = L.startQuality;
+
+        while (q >= L.minQuality) {
+          tries++;
+          var url = cv.toDataURL('image/jpeg', q);
+          best = { dataUrl: url, bytes: dataUrlBytes(url), px: longest, quality: q, tries: tries };
+          if (best.bytes <= L.maxBytes) return best;
+          q = Math.round((q - 0.08) * 100) / 100;
+        }
+        longest = Math.round(longest * 0.85);
+      }
+      // 하한까지 줄였는데도 크면, 가장 작게 나온 것을 돌려줍니다
+      return best;
+    });
+  };
+
   /* ═══════════════════════════════════════════
      2) DOM 도우미
      ═══════════════════════════════════════════ */
@@ -149,7 +242,7 @@
   /* ═══════════════════════════════════════════
      3) 라우터 · 인트로 · 공통 UI
      ═══════════════════════════════════════════ */
-  var VIEWS = ['home', 'status', 'hall', 'memorial', 'desk', 'news', 'me'];
+  var VIEWS = ['home', 'status', 'hall', 'memorial', 'desk', 'news', 'qna', 'me'];
 
   var currentView = function () {
     var id = (location.hash || '#home').replace(/^#/, '').split('?')[0];
@@ -668,10 +761,13 @@
     var cfg = D.hall;
     if (!cfg) return;
 
+    var up = remotePhotos.hall || {};
     var plates = buildPlates(cfg.total, cfg.plates, function (r) { return r.no; })
       .map(function (p) {
+        // 올려둔 사진이 있으면 그것을 먼저 씁니다
+        var uploaded = up[p.no] && up[p.no].data;
         return {
-          no: p.no, photo: p.photo, raw: p,
+          no: p.no, photo: uploaded || p.photo, raw: p,
           filled: !!p.name,
           label: p.name ? p.name : '비공개',
           sub: p.year ? String(p.year) : '—'
@@ -686,15 +782,253 @@
         var r = p.raw || {};
         return '<p class="sheet__kicker">울산 아너 명예의전당</p>' +
           '<h2 class="sheet__title" id="sheetTitle">' + p.no + '호</h2>' +
-          '<figure class="sheet__photo" style="--bg:url(' + esc(r.photo || cfg.placeholder) + ')"></figure>' +
+          '<figure class="sheet__photo" style="--bg:url(' + esc(p.photo || cfg.placeholder) + ')"></figure>' +
           '<dl class="deflist">' +
             '<div><dt>성함</dt><dd>' + (r.name ? esc(r.name) : '비공개 (공개 동의 전)') + '</dd></div>' +
             '<div><dt>가입 연도</dt><dd>' + (r.year ? esc(r.year) + '년' : '미등록') + '</dd></div>' +
             '<div><dt>지정 분야</dt><dd>' + (r.field ? esc(r.field) : '미등록') + '</dd></div>' +
             (r.memo ? '<div><dt>담당자 메모</dt><dd>' + esc(r.memo) + '</dd></div>' : '') +
           '</dl>' +
-          (r.name ? '' : '<p class="sheet__hint">사진과 상세 정보는 data/hall.js 의 plates 에 추가하면 이 화면에 표시됩니다.</p>');
+          photoBoxMarkup('hall', p.no);
+      },
+      afterOpen: bindPhotoBox
+    });
+  };
+
+  /* ═══════════════════════════════════════════
+     온라인 기능 — 사진 업로드 · 상담창구 · 담당자 로그인
+     ═══════════════════════════════════════════ */
+  var ON = function () { return window.ONLINE || { enabled: false, isAdmin: function () { return false; } }; };
+  var remotePhotos = { hall: {}, memorial: {} };
+
+  /* 명패 상세 화면 아래쪽에 붙는 사진 올리기 칸 */
+  var photoBoxMarkup = function (kind, no) {
+    var o = ON();
+    var has = !!(remotePhotos[kind] && remotePhotos[kind][no]);
+
+    if (!o.enabled) {
+      return '<div class="pbox pbox--off">사진 기능을 쓰려면 ' +
+             'data/firebase-config.js 에 연결 정보를 넣어 주세요.</div>';
+    }
+    if (!o.isAdmin()) {
+      return has ? '' :
+        '<p class="pbox__hint">사진은 담당자만 올릴 수 있습니다.</p>';
+    }
+    return '<div class="pbox" data-kind="' + kind + '" data-no="' + no + '">' +
+      '<p class="pbox__title">사진 ' + (has ? '교체' : '올리기') + '</p>' +
+      '<label class="pbox__drop">' +
+        '<input type="file" accept="image/*" class="pbox__file">' +
+        '<span>사진 고르기</span>' +
+      '</label>' +
+      (has ? '<button class="pbox__del">사진 지우기</button>' : '') +
+      '<p class="pbox__state"></p>' +
+    '</div>';
+  };
+
+  var bindPhotoBox = function () {
+    var box = $('.pbox[data-kind]');
+    if (!box) return;
+    var kind = box.dataset.kind, no = box.dataset.no;
+    var state = $('.pbox__state', box);
+    var file = $('.pbox__file', box);
+
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      if (!f) return;
+      state.className = 'pbox__state';
+      state.textContent = '사진을 줄이는 중…';
+
+      compressImage(f).then(function (r) {
+        state.textContent = '올리는 중… (' + kb(f.size) + ' → ' + kb(r.bytes) +
+                            ' · ' + r.px + 'px · 품질 ' + Math.round(r.quality * 100) + '%)';
+        return ON().savePhoto(kind, no, r.dataUrl).then(function () {
+          state.className = 'pbox__state is-ok';
+          state.textContent = '저장했습니다. ' + kb(f.size) + ' → ' + kb(r.bytes) +
+                              ' (' + Math.round(100 - r.bytes / f.size * 100) + '% 줄임)';
+        });
+      }).catch(function (e) {
+        state.className = 'pbox__state is-bad';
+        state.textContent = '실패: ' + (e && e.message ? e.message : e);
+      });
+    });
+
+    var del = $('.pbox__del', box);
+    if (del) del.addEventListener('click', function () {
+      state.textContent = '지우는 중…';
+      ON().deletePhoto(kind, no).then(function () {
+        state.className = 'pbox__state is-ok';
+        state.textContent = '지웠습니다.';
+      }).catch(function (e) {
+        state.className = 'pbox__state is-bad';
+        state.textContent = '실패: ' + e.message;
+      });
+    });
+  };
+
+  /* ── 담당자 로그인 ───────────────────────── */
+  var openAdminSheet = function () {
+    var o = ON();
+    if (!o.enabled) {
+      openSheet('<h2 class="sheet__title">담당자 로그인</h2>' +
+        '<p class="sheet__hint">' + esc(o.reason || '온라인 기능이 꺼져 있습니다.') + '</p>');
+      return;
+    }
+    if (o.isAdmin()) {
+      openSheet('<p class="sheet__kicker">Admin</p>' +
+        '<h2 class="sheet__title">로그인 상태</h2>' +
+        '<p class="sheet__sub">' + esc(o.adminEmail()) + '</p>' +
+        '<p class="sheet__hint">명예의전당과 메모리얼 아너스에서 호수를 누르면 사진을 올릴 수 있습니다. ' +
+        '상담창구에서는 답변을 달 수 있습니다.</p>' +
+        '<button class="btn btn--solid" id="doLogout">로그아웃</button>');
+      $('#doLogout').addEventListener('click', function () {
+        o.logout().then(closeSheet);
+      });
+      return;
+    }
+    openSheet('<p class="sheet__kicker">Admin</p>' +
+      '<h2 class="sheet__title">담당자 로그인</h2>' +
+      '<form id="loginForm" class="loginform" autocomplete="off">' +
+        '<label for="logEmail">이메일</label>' +
+        '<input type="email" id="logEmail" value="' + esc(window.ADMIN_EMAIL || '') + '">' +
+        '<label for="logPw">비밀번호</label>' +
+        '<input type="password" id="logPw">' +
+        '<button type="submit" class="btn btn--solid">로그인</button>' +
+        '<p class="pbox__state" id="logMsg"></p>' +
+      '</form>');
+
+    $('#loginForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var msg = $('#logMsg');
+      msg.className = 'pbox__state';
+      msg.textContent = '확인 중…';
+      o.login($('#logEmail').value.trim(), $('#logPw').value).then(function () {
+        closeSheet();
+      }).catch(function () {
+        msg.className = 'pbox__state is-bad';
+        msg.textContent = '이메일 또는 비밀번호가 맞지 않습니다.';
+      });
+    });
+  };
+
+  /* ── 온라인 상담창구 ─────────────────────── */
+  var renderQna = function (list) {
+    var o = ON();
+    var host = $('#qnaList');
+    if (!host) return;
+
+    if (!o.enabled) {
+      host.innerHTML = emptyBox('연결 정보를 넣으면 이곳에 질문과 답변이 쌓입니다.');
+      text('#qnaCount', '');
+      return;
+    }
+    list = list || o.qna();
+    text('#qnaCount', list.length ? '(' + list.length + ')' : '');
+
+    if (!list.length) {
+      host.innerHTML = emptyBox('아직 남겨진 질문이 없습니다. 첫 질문을 남겨 주세요.');
+      return;
+    }
+
+    host.innerHTML = list.map(function (q) {
+      return '<article class="qcard reveal" data-id="' + esc(q.id) + '">' +
+        '<div class="qcard__q">' +
+          '<span class="qcard__mark">Q</span>' +
+          '<div>' +
+            '<p class="qcard__meta">' + esc(q.name || '익명') +
+              '<time>' + esc(when(q.at)) + '</time></p>' +
+            '<p class="qcard__body">' + esc(q.body) + '</p>' +
+          '</div>' +
+        '</div>' +
+        (q.answer
+          ? '<div class="qcard__a">' +
+              '<span class="qcard__mark qcard__mark--a">A</span>' +
+              '<div>' +
+                '<p class="qcard__meta">우길산 파트장<time>' + esc(when(q.answeredAt)) + '</time></p>' +
+                '<p class="qcard__body">' + esc(q.answer) + '</p>' +
+              '</div>' +
+            '</div>'
+          : '<p class="qcard__wait">답변을 준비하고 있습니다.</p>') +
+        (o.isAdmin()
+          ? '<div class="qcard__admin">' +
+              '<textarea class="qcard__input" rows="3" placeholder="답변 쓰기">' + esc(q.answer || '') + '</textarea>' +
+              '<div class="qcard__btns">' +
+                '<button class="btn btn--solid qcard__save">답변 저장</button>' +
+                '<button class="linkbtn qcard__del">글 삭제</button>' +
+              '</div>' +
+            '</div>'
+          : '') +
+      '</article>';
+    }).join('');
+
+    if (!o.isAdmin()) return;
+
+    $$('.qcard', host).forEach(function (card) {
+      var id = card.dataset.id;
+      $('.qcard__save', card).addEventListener('click', function () {
+        o.answer(id, $('.qcard__input', card).value.trim());
+      });
+      $('.qcard__del', card).addEventListener('click', function () {
+        if (window.confirm('이 글을 지웁니다. 되돌릴 수 없습니다.')) o.removeQna(id);
+      });
+    });
+  };
+
+  var initAsk = function () {
+    var form = $('#askForm');
+    if (!form) return;
+
+    var body = $('#askBody');
+    body.addEventListener('input', function () {
+      text('#askCount', body.value.length + ' / 1000');
+    });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var o = ON();
+      var msg = $('#askMsg');
+      if (!o.enabled) {
+        msg.className = 'ask__msg is-bad';
+        msg.textContent = '아직 연결 전입니다. 전화나 메일로 문의해 주세요.';
+        return;
       }
+      var txt = body.value.trim();
+      if (!txt) return;
+
+      $('#askSubmit').disabled = true;
+      msg.className = 'ask__msg';
+      msg.textContent = '보내는 중…';
+
+      o.ask($('#askName').value.trim() || '익명', txt).then(function () {
+        form.reset();
+        text('#askCount', '0 / 1000');
+        msg.className = 'ask__msg is-ok';
+        msg.textContent = '보냈습니다. 확인하는 대로 답변 드리겠습니다.';
+      }).catch(function (err) {
+        msg.className = 'ask__msg is-bad';
+        msg.textContent = '보내지 못했습니다: ' + err.message;
+      }).then(function () {
+        $('#askSubmit').disabled = false;
+      });
+    });
+  };
+
+  /* 파이어베이스에서 값이 올 때마다 화면을 다시 그립니다 */
+  var initOnline = function () {
+    var o = ON();
+    $('#adminBtn').addEventListener('click', openAdminSheet);
+
+    if (!o.enabled) { renderQna(); return; }
+
+    o.on('photos', function (p) {
+      remotePhotos = p;
+      renderHall();
+      renderMemorial();
+    });
+    o.on('qna', function (list) { renderQna(list); });
+    o.on('auth', function () {
+      document.body.classList.toggle('is-admin', o.isAdmin());
+      $('#adminBtn').textContent = o.isAdmin() ? '담당자 (로그인됨)' : '담당자 로그인';
+      renderQna();
     });
   };
 
@@ -754,12 +1088,16 @@
     // 유족 동의가 없으면 목록을 만드는 단계에서 제외합니다
     var records = (m.list || []).filter(function (p) { return p.familyConsent === true; });
 
+    var up = remotePhotos.memorial || {};
     var plates = buildPlates(m.total, records, function (r) { return r.no; })
       .map(function (p) {
         var has = !!p.familyConsent;
+        // 올려둔 사진이 있어도 유족 동의와 공개 수준을 먼저 따릅니다
+        var canShow = has && p.visibility !== 'private';
+        var uploaded = up[p.no] && up[p.no].data;
         return {
           no: p.no, raw: p, filled: has,
-          photo: (has && p.visibility !== 'private') ? p.photo : null,
+          photo: canShow ? (uploaded || p.photo) : null,
           label: has ? displayName(p.visibility || 'private', p.name) : '—',
           sub: has ? (p.joinedYear + '–' + p.passedYear) : '—'
         };
@@ -777,15 +1115,16 @@
           return '<p class="sheet__kicker">Memorial Honors</p>' +
             '<h2 class="sheet__title" id="sheetTitle">' + p.no + '호</h2>' +
             '<p class="sheet__hint">이 호수에는 등록된 추모 기록이 없습니다. ' +
-            '유족의 공개 동의를 받은 뒤 data/memorial.js 에 추가하면 이 화면에 표시됩니다.</p>';
+            '유족의 공개 동의를 받은 뒤 data/memorial.js 에 추가하면 이 화면에 표시됩니다.</p>' +
+            photoBoxMarkup('memorial', p.no);
         }
         var base = r.flowers || 0;
         var on = mine[r.no] ? 1 : 0;
         return '<p class="sheet__kicker">Memorial Honors</p>' +
           '<h2 class="sheet__title" id="sheetTitle">' + esc(displayName(r.visibility || 'private', r.name)) + '</h2>' +
           '<p class="sheet__sub">' + p.no + '호 · ' + esc(r.joinedYear) + ' — ' + esc(r.passedYear) + '</p>' +
-          ((r.visibility !== 'private' && r.photo)
-            ? '<figure class="sheet__photo sheet__photo--mono" style="--bg:url(' + esc(r.photo) + ')"></figure>' : '') +
+          (p.photo
+            ? '<figure class="sheet__photo sheet__photo--mono" style="--bg:url(' + esc(p.photo) + ')"></figure>' : '') +
           (r.epitaph ? '<blockquote class="sheet__epitaph">' + esc(r.epitaph) + '</blockquote>' : '') +
           ((r.tributes && r.tributes.length)
             ? '<ul class="tributes">' + r.tributes.map(function (t) {
@@ -793,9 +1132,11 @@
               }).join('') + '</ul>' : '') +
           (m.flowersEnabled
             ? '<button class="flower' + (on ? ' is-on' : '') + '" id="sheetFlower" data-no="' + r.no + '">' +
-              '<i aria-hidden="true"></i><b>헌화 ' + (base + on) + '</b></button>' : '');
+              '<i aria-hidden="true"></i><b>헌화 ' + (base + on) + '</b></button>' : '') +
+          photoBoxMarkup('memorial', p.no);
       },
       afterOpen: function (p) {
+        bindPhotoBox();
         var btn = $('#sheetFlower');
         if (!btn) return;
         var r = p.raw;
@@ -1023,11 +1364,40 @@
     renderNews();
     renderStatus();
     renderMe();
+    initAsk();
     initSheet();
     initChrome();
     initRouter();
+
+    /* 파이어베이스 모듈은 조금 늦게 준비됩니다.
+       파일을 직접 열었을 때(file://)는 브라우저가 모듈 스크립트를 막아
+       영영 준비되지 않으므로, 잠시 기다렸다가 '꺼진 상태'로 진행합니다. */
+    var started = false;
+    var start = function () {
+      if (started) return;
+      started = true;
+      if (!window.ONLINE) {
+        window.ONLINE = {
+          enabled: false,
+          reason: location.protocol === 'file:'
+            ? '파일을 직접 열면 온라인 기능이 작동하지 않습니다. 웹에 올린 주소로 접속해 주세요.'
+            : '파이어베이스에 연결하지 못했습니다. data/firebase-config.js 를 확인해 주세요.',
+          isAdmin: function () { return false; },
+          on: function () {}
+        };
+      }
+      initOnline();
+    };
+    if (window.ONLINE) start();
+    else {
+      document.addEventListener('online-ready', start, { once: true });
+      setTimeout(start, 2500);
+    }
   });
 
   // 콘솔에서 계산 함수를 바로 확인할 수 있게 열어둡니다
-  window.HONOR_FN = { buildSchedule: buildSchedule, taxCredit: taxCredit, maskName: maskName, pipe: pipe };
+  window.HONOR_FN = {
+    buildSchedule: buildSchedule, taxCredit: taxCredit, maskName: maskName,
+    pipe: pipe, compressImage: compressImage, kb: kb
+  };
 })();
