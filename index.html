@@ -380,6 +380,7 @@
   <section class="block block--tint">
     <div class="wrap">
       <h2 class="h2 reveal">주고받은 이야기 <span class="h2__count" id="qnaCount"></span></h2>
+      <div id="qnaMode"></div>
       <div class="qna" id="qnaList"></div>
     </div>
   </section>
@@ -464,6 +465,7 @@
 <script src="data/faq.js"></script>
 <script src="data/contact.js"></script>
 <script src="assets/js/main.js"></script>
-<script type="module" src="assets/js/online.js"></script>
+<!-- 모듈을 못 읽는 환경(파일 직접 열기 등)에서는 즉시 로컬 모드로 넘어갑니다 -->
+<script type="module" src="assets/js/online.js" onerror="document.dispatchEvent(new CustomEvent('online-ready'))"></script>
 </body>
 </html>

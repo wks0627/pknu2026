@@ -801,21 +801,109 @@
   var ON = function () { return window.ONLINE || { enabled: false, isAdmin: function () { return false; } }; };
   var remotePhotos = { hall: {}, memorial: {} };
 
+  /* ── 로컬 모드 ───────────────────────────────
+     파이어베이스 연결 정보가 아직 없을 때 쓰는 대체 장치입니다.
+     파이어베이스와 똑같은 모양의 함수를 제공하되, 저장은 이 브라우저에만 합니다.
+     나중에 연결 정보를 채우면 아무것도 고치지 않아도 서버 쪽으로 넘어갑니다.
+
+     ⚠ 이 모드의 저장 내용은 이 컴퓨터의 이 브라우저에만 남습니다.
+       방문자에게는 보이지 않습니다.
+     ──────────────────────────────────────────── */
+  var makeLocalDriver = function () {
+    var P_KEY = 'local-photos', Q_KEY = 'local-qna', A_KEY = 'local-admin';
+    var subs = {};
+    var photos = store.get(P_KEY, { hall: {}, memorial: {} });
+    var qna = store.get(Q_KEY, []);
+    var admin = store.get(A_KEY, true);     // 내 컴퓨터이므로 기본은 담당자 모드
+
+    var emit = function (name, v) { (subs[name] || []).forEach(function (f) { f(v); }); };
+    var savePhotos = function () { store.set(P_KEY, photos); emit('photos', photos); };
+    var saveQna = function () {
+      qna.sort(function (a, b) { return b.at - a.at; });
+      store.set(Q_KEY, qna); emit('qna', qna);
+    };
+    var find = function (id) {
+      return qna.filter(function (q) { return q.id === id; })[0];
+    };
+
+    return {
+      enabled: true,
+      mode: 'local',
+      notice: '지금은 <b>이 브라우저에만 저장</b>되는 연습 모드입니다. ' +
+              'data/firebase-config.js 에 연결 정보를 넣으면 실제 서버로 바뀝니다.',
+
+      on: function (name, fn) {
+        (subs[name] = subs[name] || []).push(fn);
+        if (name === 'photos') fn(photos);
+        if (name === 'qna') fn(qna);
+        if (name === 'auth') fn(admin ? { email: window.ADMIN_EMAIL || '담당자' } : null);
+      },
+
+      isAdmin: function () { return admin; },
+      adminEmail: function () { return window.ADMIN_EMAIL || '담당자'; },
+      login: function () {
+        admin = true; store.set(A_KEY, true);
+        emit('auth', { email: this.adminEmail() });
+        return Promise.resolve();
+      },
+      logout: function () {
+        admin = false; store.set(A_KEY, false);
+        emit('auth', null);
+        return Promise.resolve();
+      },
+
+      photos: function () { return photos; },
+      qna: function () { return qna; },
+
+      savePhoto: function (kind, no, dataUrl) {
+        photos[kind] = photos[kind] || {};
+        photos[kind][no] = { data: dataUrl, at: Date.now() };
+        try { savePhotos(); } catch (e) {
+          return Promise.reject(new Error('브라우저 저장 공간이 가득 찼습니다.'));
+        }
+        return Promise.resolve();
+      },
+      deletePhoto: function (kind, no) {
+        if (photos[kind]) delete photos[kind][no];
+        savePhotos();
+        return Promise.resolve();
+      },
+
+      ask: function (name, body) {
+        qna.push({
+          id: 'q' + Date.now() + Math.random().toString(36).slice(2, 7),
+          name: String(name || '').slice(0, 20),
+          body: String(body || '').slice(0, 1000),
+          at: Date.now(), answer: null
+        });
+        saveQna();
+        return Promise.resolve();
+      },
+      answer: function (id, t) {
+        var q = find(id);
+        if (q) { q.answer = String(t || '').slice(0, 2000); q.answeredAt = Date.now(); saveQna(); }
+        return Promise.resolve();
+      },
+      removeQna: function (id) {
+        qna = qna.filter(function (q) { return q.id !== id; });
+        saveQna();
+        return Promise.resolve();
+      }
+    };
+  };
+
   /* 명패 상세 화면 아래쪽에 붙는 사진 올리기 칸 */
   var photoBoxMarkup = function (kind, no) {
     var o = ON();
     var has = !!(remotePhotos[kind] && remotePhotos[kind][no]);
 
-    if (!o.enabled) {
-      return '<div class="pbox pbox--off">사진 기능을 쓰려면 ' +
-             'data/firebase-config.js 에 연결 정보를 넣어 주세요.</div>';
-    }
     if (!o.isAdmin()) {
       return has ? '' :
         '<p class="pbox__hint">사진은 담당자만 올릴 수 있습니다.</p>';
     }
     return '<div class="pbox" data-kind="' + kind + '" data-no="' + no + '">' +
       '<p class="pbox__title">사진 ' + (has ? '교체' : '올리기') + '</p>' +
+      (o.mode === 'local' ? '<p class="pbox__local">' + o.notice + '</p>' : '') +
       '<label class="pbox__drop">' +
         '<input type="file" accept="image/*" class="pbox__file">' +
         '<span>사진 고르기</span>' +
@@ -868,11 +956,23 @@
   /* ── 담당자 로그인 ───────────────────────── */
   var openAdminSheet = function () {
     var o = ON();
-    if (!o.enabled) {
-      openSheet('<h2 class="sheet__title">담당자 로그인</h2>' +
-        '<p class="sheet__hint">' + esc(o.reason || '온라인 기능이 꺼져 있습니다.') + '</p>');
+
+    /* 로컬 모드에서는 내 컴퓨터이므로 비밀번호 없이 켜고 끕니다 */
+    if (o.mode === 'local') {
+      openSheet('<p class="sheet__kicker">Admin</p>' +
+        '<h2 class="sheet__title">담당자 모드</h2>' +
+        '<p class="localnote">' + o.notice + '</p>' +
+        '<p class="sheet__hint">담당자 모드를 켜면 명예의전당·메모리얼에서 사진을 올리고, ' +
+        '상담창구에서 답변을 달 수 있습니다. 끄면 방문자에게 보이는 화면을 확인할 수 있습니다.</p>' +
+        '<button class="btn ' + (o.isAdmin() ? 'btn--line' : 'btn--solid') + '" id="toggleAdmin">' +
+          (o.isAdmin() ? '담당자 모드 끄기 (방문자 화면 보기)' : '담당자 모드 켜기') +
+        '</button>');
+      $('#toggleAdmin').addEventListener('click', function () {
+        (o.isAdmin() ? o.logout() : o.login()).then(closeSheet);
+      });
       return;
     }
+
     if (o.isAdmin()) {
       openSheet('<p class="sheet__kicker">Admin</p>' +
         '<h2 class="sheet__title">로그인 상태</h2>' +
@@ -916,10 +1016,9 @@
     var host = $('#qnaList');
     if (!host) return;
 
-    if (!o.enabled) {
-      host.innerHTML = emptyBox('연결 정보를 넣으면 이곳에 질문과 답변이 쌓입니다.');
-      text('#qnaCount', '');
-      return;
+    var banner = $('#qnaMode');
+    if (banner) {
+      banner.innerHTML = o.mode === 'local' ? '<p class="localnote">' + o.notice + '</p>' : '';
     }
     list = list || o.qna();
     text('#qnaCount', list.length ? '(' + list.length + ')' : '');
@@ -986,11 +1085,6 @@
       e.preventDefault();
       var o = ON();
       var msg = $('#askMsg');
-      if (!o.enabled) {
-        msg.className = 'ask__msg is-bad';
-        msg.textContent = '아직 연결 전입니다. 전화나 메일로 문의해 주세요.';
-        return;
-      }
       var txt = body.value.trim();
       if (!txt) return;
 
@@ -1016,8 +1110,6 @@
   var initOnline = function () {
     var o = ON();
     $('#adminBtn').addEventListener('click', openAdminSheet);
-
-    if (!o.enabled) { renderQna(); return; }
 
     o.on('photos', function (p) {
       remotePhotos = p;
@@ -1376,22 +1468,14 @@
     var start = function () {
       if (started) return;
       started = true;
-      if (!window.ONLINE) {
-        window.ONLINE = {
-          enabled: false,
-          reason: location.protocol === 'file:'
-            ? '파일을 직접 열면 온라인 기능이 작동하지 않습니다. 웹에 올린 주소로 접속해 주세요.'
-            : '파이어베이스에 연결하지 못했습니다. data/firebase-config.js 를 확인해 주세요.',
-          isAdmin: function () { return false; },
-          on: function () {}
-        };
-      }
+      // 파이어베이스가 준비되지 않았으면 브라우저 저장(로컬 모드)으로 대신합니다
+      if (!window.ONLINE || !window.ONLINE.enabled) window.ONLINE = makeLocalDriver();
       initOnline();
     };
     if (window.ONLINE) start();
     else {
       document.addEventListener('online-ready', start, { once: true });
-      setTimeout(start, 2500);
+      setTimeout(start, 1200);
     }
   });
 
