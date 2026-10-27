@@ -1124,18 +1124,34 @@
     });
   };
 
-  /* 메뉴별 대표 이미지 — 원본 그대로, 자르지 않습니다 */
+  /* 메뉴별 대표 이미지.
+     본문을 아래로 밀어내지 않도록, 제목 칸의 배경으로 옅게 깝니다.
+     사진을 크게 보고 싶으면 오른쪽 아래 단추로 펼칩니다. */
   var renderCovers = function () {
     var covers = D.covers || {};
     Object.keys(covers).forEach(function (key) {
       var host = $('#cover-' + key);
       var c = covers[key];
       if (!host || !c) return;
-      host.innerHTML =
-        '<figure class="cover">' +
-          '<img class="cover__img" src="' + esc(c.file) + '" alt="' + esc(c.alt) + '">' +
-          (c.caption ? '<figcaption class="cover__cap">' + esc(c.caption) + '</figcaption>' : '') +
-        '</figure>';
+
+      host.style.setProperty('--bg', 'url(' + c.file + ')');
+      host.closest('.phead').classList.add('has-bg');
+
+      var wrap = $('.wrap', host.closest('.phead'));
+      if (wrap && !$('.phead__peek', wrap)) {
+        var btn = document.createElement('button');
+        btn.className = 'phead__peek';
+        btn.type = 'button';
+        btn.textContent = '사진 보기';
+        btn.addEventListener('click', function () {
+          openSheet(
+            '<p class="sheet__kicker">' + esc(c.caption || '') + '</p>' +
+            '<h2 class="sheet__title" id="sheetTitle">대표 사진</h2>' +
+            '<img class="sheet__full" src="' + esc(c.file) + '" alt="' + esc(c.alt) + '">'
+          );
+        });
+        wrap.appendChild(btn);
+      }
     });
   };
 
@@ -1472,11 +1488,19 @@
       if (!window.ONLINE || !window.ONLINE.enabled) window.ONLINE = makeLocalDriver();
       initOnline();
     };
-    if (window.ONLINE) start();
+    if (window.ONLINE || window.ONLINE_SETTLED) start();
     else {
       document.addEventListener('online-ready', start, { once: true });
-      setTimeout(start, 1200);
+      // CDN 이 느릴 수 있으니 넉넉히 기다린 뒤에만 연습모드로 넘어갑니다
+      setTimeout(start, 8000);
     }
+
+    /* 연습모드에 쌓였던 자료가 서버로 옮겨지면 알려 줍니다 */
+    document.addEventListener('online-migrated', function (e) {
+      var m = e.detail || {};
+      window.alert('연습모드에 저장돼 있던 자료를 서버로 옮겼습니다.\n' +
+                   '사진 ' + (m.photos || 0) + '장, 글 ' + (m.qna || 0) + '건');
+    });
   });
 
   // 콘솔에서 계산 함수를 바로 확인할 수 있게 열어둡니다
