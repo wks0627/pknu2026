@@ -95,10 +95,11 @@
      01 현황과 연혁
      ═════════════════════════════════════════ -->
 <div class="view" id="view-status">
-  <header class="phead"><div class="wrap">
+  <header class="phead">
+    <div class="phead__bg" id="cover-status" aria-hidden="true"></div>
+    <div class="wrap">
     <p class="label">01 — Status</p>
     <h1 class="phead__title">현황과 연혁</h1>
-    <div id="cover-status"></div>
   </div></header>
 
   <!-- 아너 소사이어티란 -->
@@ -170,13 +171,10 @@
      02 명예의전당
      ═════════════════════════════════════════ -->
 <div class="view view--dark" id="view-hall">
-  <!-- 울산박물관 명예의전당 -->
-  <section class="banner banner--hall">
-    <img class="banner__img" src="assets/img/hall-poster.jpg"
-         alt="울산박물관에 설치된 울산 아너 소사이어티 아너 명예의전당 — 당신의 이름이 세상을 바꿉니다">
-  </section>
 
-  <header class="phead phead--dark"><div class="wrap">
+  <header class="phead phead--dark">
+    <div class="phead__bg" id="cover-hall" aria-hidden="true"></div>
+    <div class="wrap">
     <p class="label">02 — Hall of Honor</p>
     <h1 class="phead__title">울산 아너 명예의전당</h1>
   </div></header>
@@ -249,10 +247,11 @@
      04 상담 데스크
      ═════════════════════════════════════════ -->
 <div class="view" id="view-desk">
-  <header class="phead"><div class="wrap">
+  <header class="phead">
+    <div class="phead__bg" id="cover-desk" aria-hidden="true"></div>
+    <div class="wrap">
     <p class="label">04 — Desk</p>
     <h1 class="phead__title">상담 데스크</h1>
-    <div id="cover-desk"></div>
   </div></header>
 
   <section class="block">
@@ -322,10 +321,11 @@
      05 복지동향
      ═════════════════════════════════════════ -->
 <div class="view" id="view-news">
-  <header class="phead"><div class="wrap">
+  <header class="phead">
+    <div class="phead__bg" id="cover-news" aria-hidden="true"></div>
+    <div class="wrap">
     <p class="label">05 — News</p>
     <h1 class="phead__title">복지동향</h1>
-    <div id="cover-news"></div>
   </div></header>
 
   <section class="block">
@@ -344,7 +344,9 @@
      06 온라인 상담창구
      ═════════════════════════════════════════ -->
 <div class="view" id="view-qna">
-  <header class="phead"><div class="wrap">
+  <header class="phead">
+    <div class="phead__bg" id="cover-qna" aria-hidden="true"></div>
+    <div class="wrap">
     <p class="label">06 — Q&amp;A</p>
     <h1 class="phead__title">온라인 상담창구</h1>
   </div></header>
@@ -390,7 +392,9 @@
      07 담당자
      ═════════════════════════════════════════ -->
 <div class="view" id="view-me">
-  <header class="phead"><div class="wrap">
+  <header class="phead">
+    <div class="phead__bg" id="cover-me" aria-hidden="true"></div>
+    <div class="wrap">
     <p class="label">07 — CONTACT</p>
     <h1 class="phead__title">담당자</h1>
   </div></header>
@@ -465,7 +469,6 @@
 <script src="data/faq.js"></script>
 <script src="data/contact.js"></script>
 <script src="assets/js/main.js"></script>
-<!-- 모듈을 못 읽는 환경(파일 직접 열기 등)에서는 즉시 로컬 모드로 넘어갑니다 -->
-<script type="module" src="assets/js/online.js" onerror="document.dispatchEvent(new CustomEvent('online-ready'))"></script>
+<script src="assets/js/online.js"></script>
 </body>
 </html>
