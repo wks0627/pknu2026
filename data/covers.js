@@ -23,6 +23,11 @@ HONOR.covers = {
     file: "assets/img/menu/desk.jpg",
     alt: "나눔의 장면들을 담은 그림 — 손 위에 놓인 열매와 사람들",
     caption: "한 사람의 결심이 닿는 자리들"
+  },
+  hall: {
+    file: "assets/img/hall-poster.jpg",
+    alt: "울산박물관에 설치된 울산 아너 소사이어티 아너 명예의전당",
+    caption: "울산박물관 1층 · 아너 명예의전당"
   }
 
   /* 아직 지정하지 않은 메뉴
