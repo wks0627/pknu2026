@@ -51,6 +51,19 @@
     });
   };
 
+  /* CSS 변수(--bg)에 넣을 그림 주소.
+
+     ⚠ CSS 변수 안의 상대 경로는 'HTML 위치'가 아니라
+       '그 변수를 쓰는 스타일시트 위치' 기준으로 해석됩니다.
+       assets/css/style.css 에서 쓰므로 assets/img/… 를 그대로 넣으면
+       assets/css/assets/img/… 를 찾아가 깨집니다. 그래서 절대주소로 바꿉니다.
+       data: 로 시작하는 주소(업로드한 사진)는 그대로 통과합니다. */
+  var cssUrl = function (path) {
+    if (!path) return '';
+    try { return 'url("' + new URL(path, document.baseURI).href + '")'; }
+    catch (e) { return 'url("' + path + '")'; }
+  };
+
   /* 바이트 수를 사람이 읽는 단위로 */
   var kb = function (n) {
     return n < 1024 ? n + 'B' : (n / 1024).toFixed(1) + 'KB';
@@ -704,7 +717,7 @@
     var img = p.photo || bg;
     return '<button class="plate' + (p.filled ? ' plate--filled' : '') +
       (hasPhoto ? ' plate--photo' : '') + '" data-no="' + p.no + '">' +
-      '<span class="plate__frame"' + (img ? ' style="--bg:url(' + esc(img) + ')"' : '') + '>' +
+      '<span class="plate__frame"' + (img ? ' style="--bg:' + cssUrl(img) + '"' : '') + '>' +
         (hasPhoto ? '' : '<span class="plate__empty" aria-hidden="true">사진</span>') +
       '</span>' +
       '<span class="plate__tag">' +
@@ -782,7 +795,7 @@
         var r = p.raw || {};
         return '<p class="sheet__kicker">울산 아너 명예의전당</p>' +
           '<h2 class="sheet__title" id="sheetTitle">' + p.no + '호</h2>' +
-          '<figure class="sheet__photo" style="--bg:url(' + esc(p.photo || cfg.placeholder) + ')"></figure>' +
+          '<figure class="sheet__photo" style="--bg:' + cssUrl(p.photo || cfg.placeholder) + '"></figure>' +
           '<dl class="deflist">' +
             '<div><dt>성함</dt><dd>' + (r.name ? esc(r.name) : '비공개 (공개 동의 전)') + '</dd></div>' +
             '<div><dt>가입 연도</dt><dd>' + (r.year ? esc(r.year) + '년' : '미등록') + '</dd></div>' +
@@ -1134,22 +1147,27 @@
       var c = covers[key];
       if (!host || !c) return;
 
-      host.style.setProperty('--bg', 'url(' + c.file + ')');
+      host.style.setProperty('--bg', cssUrl(c.file));
       host.closest('.phead').classList.add('has-bg');
+
+      var show = function () {
+        openSheet(
+          '<p class="sheet__kicker">' + esc(c.caption || '') + '</p>' +
+          '<h2 class="sheet__title" id="sheetTitle">대표 사진</h2>' +
+          '<img class="sheet__full" src="' + esc(c.file) + '" alt="' + esc(c.alt) + '">'
+        );
+      };
+      // 사진 자체를 눌러도 크게 열립니다
+      host.setAttribute('title', c.caption || '사진 크게 보기');
+      host.addEventListener('click', show);
 
       var wrap = $('.wrap', host.closest('.phead'));
       if (wrap && !$('.phead__peek', wrap)) {
         var btn = document.createElement('button');
         btn.className = 'phead__peek';
         btn.type = 'button';
-        btn.textContent = '사진 보기';
-        btn.addEventListener('click', function () {
-          openSheet(
-            '<p class="sheet__kicker">' + esc(c.caption || '') + '</p>' +
-            '<h2 class="sheet__title" id="sheetTitle">대표 사진</h2>' +
-            '<img class="sheet__full" src="' + esc(c.file) + '" alt="' + esc(c.alt) + '">'
-          );
-        });
+        btn.textContent = '사진 크게 보기';
+        btn.addEventListener('click', show);
         wrap.appendChild(btn);
       }
     });
@@ -1232,7 +1250,7 @@
           '<h2 class="sheet__title" id="sheetTitle">' + esc(displayName(r.visibility || 'private', r.name)) + '</h2>' +
           '<p class="sheet__sub">' + p.no + '호 · ' + esc(r.joinedYear) + ' — ' + esc(r.passedYear) + '</p>' +
           (p.photo
-            ? '<figure class="sheet__photo sheet__photo--mono" style="--bg:url(' + esc(p.photo) + ')"></figure>' : '') +
+            ? '<figure class="sheet__photo sheet__photo--mono" style="--bg:' + cssUrl(p.photo) + '"></figure>' : '') +
           (r.epitaph ? '<blockquote class="sheet__epitaph">' + esc(r.epitaph) + '</blockquote>' : '') +
           ((r.tributes && r.tributes.length)
             ? '<ul class="tributes">' + r.tributes.map(function (t) {
