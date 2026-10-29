@@ -232,22 +232,37 @@ a{ color:inherit }
 
 /* ── 메뉴별 대표 이미지 — 제목 칸의 배경으로 ──
    본문을 아래로 밀지 않도록 배경으로 깔고, 글자는 그 위에 얹습니다. */
+/* 제목 오른쪽 빈자리에 대표 사진을 실제로 보여 줍니다.
+   왼쪽 가장자리는 서서히 사라지게 해 글자 영역과 자연스럽게 이어집니다. */
 .phead__bg{
-  position:absolute; inset:0; pointer-events:none;
-  background:var(--bg) center/cover no-repeat;
-  opacity:.16;
-  -webkit-mask-image:linear-gradient(100deg, transparent 0%, #000 38%, #000 100%);
-  mask-image:linear-gradient(100deg, transparent 0%, #000 38%, #000 100%);
+  /* 고정 메뉴 아래에서 시작하고, 사진 전체가 보이도록 비율을 줄여 담습니다 */
+  position:absolute; top:4.7rem; bottom:.8rem; z-index:0;
+  right:clamp(1.2rem,5vw,3rem);
+  width:min(42%, 540px);
+  background:var(--bg) right center/contain no-repeat;
+  cursor:zoom-in;
+  transition:filter .4s var(--ease), transform .4s var(--ease);
 }
-.phead--dark .phead__bg{ opacity:.3 }
-.phead.has-bg::after{
-  content:""; position:absolute; inset:0; pointer-events:none;
-  background:linear-gradient(90deg, var(--porcelain) 0%, rgba(250,247,242,.72) 42%, transparent 72%);
+.phead__bg:hover{ filter:brightness(1.05); transform:scale(1.015) }
+.phead--dark .phead__bg{ filter:brightness(.9) }
+.phead--dark .phead__bg:hover{ filter:brightness(1.02) }
+
+/* 사진 왼쪽 가장자리를 바탕색으로 녹여 글자 영역과 이어 줍니다 */
+.phead.has-bg::before{
+  content:""; position:absolute; top:0; bottom:0; right:0; z-index:1;
+  width:min(46%, 600px); pointer-events:none;
+  background:linear-gradient(90deg,
+    var(--porcelain) 0%, rgba(250,247,242,.72) 22%, transparent 48%);
 }
-.phead--dark.has-bg::after{
-  background:linear-gradient(90deg, var(--stone) 0%, rgba(28,23,19,.78) 42%, rgba(28,23,19,.25) 100%);
+.phead--dark.has-bg::before{
+  background:linear-gradient(90deg,
+    var(--stone) 0%, rgba(28,23,19,.74) 22%, transparent 48%);
 }
-.phead.has-bg > .wrap{ position:relative; z-index:2 }
+
+/* 글자가 사진 위로 넘어가지 않도록 폭을 제한합니다 */
+.phead.has-bg{ min-height:236px; display:flex; align-items:center }
+.phead.has-bg > .wrap{ position:relative; z-index:2; width:100%; pointer-events:none }
+.phead.has-bg > .wrap > *{ max-width:min(620px, 52%); pointer-events:auto }
 
 /* 사진을 크게 보고 싶을 때 */
 .phead__peek{
@@ -952,6 +967,12 @@ body.is-admin .footer__admin{ color:var(--gold-lit); font-weight:700 }
 }
 @media (max-width:900px){
   .person{ grid-template-columns:1fr } .person__photo{ max-width:320px }
+}
+@media (max-width:980px){
+  /* 좁아지면 사진은 옅게 깔고 글자가 전체 폭을 쓰게 합니다 */
+  .phead__bg{ width:58%; opacity:.3; cursor:default }
+  .phead.has-bg{ min-height:0; display:block }
+  .phead.has-bg > .wrap > *{ max-width:none }
 }
 @media (max-width:860px){
   .burger{ display:block }
